@@ -1,0 +1,24 @@
+# ESTA Configuration File
+
+[paths]
+# Relative paths to source files and build directory.
+source=source
+css=source/css
+js=source/js
+lang=source/lang
+templates=source/templates
+pages=source/pages
+assets=source/assets
+build=build
+
+[lang]
+# List language filenames (without extension) to include from source/lang (example below).
+en
+
+[css]
+# List, in order, css filenames (without extension) to include from source/css (example below).
+styles
+
+[js]
+# List, in order, js filenames (without extension) to include from source/js (example below).
+script
