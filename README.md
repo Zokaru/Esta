@@ -246,4 +246,4 @@ Javascript bundling works identically to CSS: store JS files in the 'js' directo
 
 ## License
 
-GNU GENERAL PUBLIC LICENSE Version 3: [LICENSE](/LICENSE).
+This project is licensed under the GNU General Public License Version 3: [LICENSE](/LICENSE).

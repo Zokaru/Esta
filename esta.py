@@ -201,15 +201,240 @@ def check_html(text):
 # --------------------------------------------------------------------------
 # CSS / JS bundles
 # --------------------------------------------------------------------------
-def compile_bundle(names, src_dir, ext, out_path, js):
+
+
+# ---- CSS minifier --------------------------------------------------------
+_CSS_TOKEN_RE = re.compile(
+    r"""
+    (?P<comment>/\*.*?\*/)
+  | (?P<string>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')
+  | url\(\s*(?P<url>(?![\s'"])[^)]*?)\s*\)
+  | (?P<space>\s+)
+  | (?P<other>.)
+    """,
+    re.S | re.I | re.X,
+)
+
+
+def minify_css(src):
+    """Strip comments and unnecessary whitespace (strings and url() are kept)."""
+    out, space = [], False
+    for m in _CSS_TOKEN_RE.finditer(src):
+        kind = m.lastgroup
+        if kind in ("comment", "space"):
+            space = True
+            continue
+        if kind == "url":
+            tok = f"url({m.group('url')})"
+        else:
+            tok = m.group()
+        if out and space and out[-1][-1] not in "{};,>(:" and tok[0] not in "{};,>)":
+            out.append(" ")
+        space = False
+        if tok == "}" and out and out[-1] == ";":
+            out.pop()  # the last ';' in a block is redundant
+        out.append(tok)
+    return "".join(out)
+
+
+# ---- JS minifier ---------------------------------------------------------
+_JS_WORD_RE = re.compile(r"[\w$\\\u0080-\uffff]+")
+_JS_REGEX_AFTER = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
+    "throw", "case", "do", "else", "yield", "await",
+}
+
+
+def _js_word_char(c):
+    return c.isalnum() or c in "_$\\" or ord(c) > 127
+
+
+def _skip_js_string(s, i):
+    quote, n, j = s[i], len(s), i + 1
+    while j < n:
+        c = s[j]
+        if c == "\\":
+            j += 2
+        elif c == quote:
+            return j + 1
+        elif c == "\n":
+            return j  # unterminated: stop at the end of the line
+        else:
+            j += 1
+    return n
+
+
+def _skip_js_template(s, i):
+    n, j = len(s), i + 1
+    while j < n:
+        c = s[j]
+        if c == "\\":
+            j += 2
+        elif c == "`":
+            return j + 1
+        elif c == "$" and s.startswith("${", j):
+            j = _skip_js_braces(s, j + 2)
+        else:
+            j += 1
+    return n
+
+
+def _skip_js_braces(s, i):
+    """Skip to just after the '}' closing a '${' (i is just after the '${')."""
+    n, depth = len(s), 1
+    while i < n:
+        c = s[i]
+        if c in "'\"":
+            i = _skip_js_string(s, i)
+        elif c == "`":
+            i = _skip_js_template(s, i)
+        elif s.startswith("/*", i):
+            end = s.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+        elif s.startswith("//", i):
+            end = s.find("\n", i)
+            i = n if end == -1 else end
+        elif c == "{":
+            depth += 1
+            i += 1
+        elif c == "}":
+            depth -= 1
+            i += 1
+            if depth == 0:
+                return i
+        else:
+            i += 1
+    return n
+
+
+def _skip_js_regex(s, i):
+    """End index of a regex literal starting at s[i] == '/', or None."""
+    n, j, in_class = len(s), i + 1, False
+    while j < n:
+        c = s[j]
+        if c == "\n":
+            return None
+        if c == "\\":
+            j += 2
+            continue
+        if in_class:
+            if c == "]":
+                in_class = False
+        elif c == "[":
+            in_class = True
+        elif c == "/":
+            return j + 1
+        j += 1
+    return None
+
+
+def _js_gap(prev, nxt, newline):
+    """Separator needed between two tokens that had whitespace between them."""
+    a, b = prev[-1], nxt[0]
+    if newline:
+        if a in "{([,;" or b in "})],;":
+            return ""
+        return "\n"
+    if ((_js_word_char(a) and _js_word_char(b))
+            or (a == b and a in "+-/")
+            or (a.isdigit() and b == ".")):
+        return " "
+    return ""
+
+
+def minify_js(src):
+    """Strip comments and unnecessary whitespace (strings/regex/templates kept)."""
+    out, n, i = [], len(src), 0
+    last, last_kind = "", None
+    space = newline = False
+    while i < n:
+        c = src[i]
+        if c.isspace():
+            j = i
+            while j < n and src[j].isspace():
+                j += 1
+            if re.search(r"[\n\r\u2028\u2029]", src[i:j]):
+                newline = True
+            space, i = True, j
+            continue
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            space, i = True, (n if j == -1 else j)
+            continue
+        if src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            end = n if j == -1 else j + 2
+            if "\n" in src[i:end]:
+                newline = True
+            space, i = True, end
+            continue
+
+        end = None
+        kind = "punct"
+        if c in "'\"":
+            end, kind = _skip_js_string(src, i), "str"
+        elif c == "`":
+            end, kind = _skip_js_template(src, i), "str"
+        elif c == "/":
+            regex_ok = (last_kind is None
+                        or (last_kind == "punct" and last not in ")]")
+                        or (last_kind == "word" and last in _JS_REGEX_AFTER))
+            if regex_ok:
+                end = _skip_js_regex(src, i)
+                if end:
+                    kind = "str"
+        if end is None:
+            m = _JS_WORD_RE.match(src, i)
+            if m:
+                end, kind = m.end(), "word"
+            else:
+                end, kind = i + 1, "punct"
+
+        tok = src[i:end]
+        if out and space:
+            out.append(_js_gap(last, tok, newline))
+        out.append(tok)
+        last, last_kind = tok, kind
+        space = newline = False
+        i = end
+    return "".join(out)
+
+
+# ---- Bundles -------------------------------------------------------------
+def resolve_bundle_assets(text, label, out_path, asset_map, js, base_url):
+    """
+    Replace {{ asset: 'route' }} inside a CSS/JS file.
+
+    - CSS: URL relative to the bundle (this is how url() is resolved).
+    - JS:  absolute URL ('<base_url>/assets/...'), because a relative path
+           in a script is resolved against the page, not the script. Without a
+           base_url it is root-relative ('/assets/...').
+    """
+    def asset(match):
+        key = posixpath.normpath(match.group(2).lstrip("/"))
+        built = asset_map.get(key)
+        if built is None:
+            warn(f"{label}: asset '{key}' not found in assets/.")
+            built = key
+        if js:
+            return f"{base_url}/assets/{built}"
+        return rel(os.path.join(BUILD, "assets", built), out_path)
+
+    return ASSET_RE.sub(asset, text)
+
+
+def compile_bundle(names, src_dir, ext, out_path, js, asset_map=None, base_url=""):
     parts = []
     for name in names:
         path = os.path.join(src_dir, f"{name}.{ext}")
+        label = f"{name}.{ext}"
         content = read_file(path)
+        content = resolve_bundle_assets(content, label, out_path,
+                                        asset_map or {}, js, base_url)
         problem = check_balanced(content, js)
         if problem:
-            warn(f"{name}.{ext}: {problem}")
-        parts.append(content)
+            warn(f"{label}: {problem}")
+        parts.append(minify_js(content) if js else minify_css(content))
     write_file(out_path, "\n".join(parts))
 
 
@@ -521,14 +746,14 @@ def build(config_file=None):
     print("Clearing build/ ...")
     clear_build()
 
-    print("Compiling CSS and JS ...")
-    css_file = os.path.join(BUILD, "css", f"styles-{stamp}.css")
-    js_file = os.path.join(BUILD, "js", f"script-{stamp}.js")
-    compile_bundle(config["css"], CSS_DIR, "css", css_file, js=False)
-    compile_bundle(config["js"], JS_DIR, "js", js_file, js=True)
-
     print("Syncing assets ...")
     asset_map = sync_assets()
+
+    print("Bundling CSS and JS ...")
+    css_file = os.path.join(BUILD, "css", f"styles-{stamp}.css")
+    js_file = os.path.join(BUILD, "js", f"script-{stamp}.js")
+    compile_bundle(config["css"], CSS_DIR, "css", css_file, False, asset_map, base_url)
+    compile_bundle(config["js"], JS_DIR, "js", js_file, True, asset_map, base_url)
 
     templates = load_templates()
     errors = []
