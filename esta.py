@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-# ESTA - Minimal Static Site Generator.
-# Usage: python esta.py build
+# Esta - Minimal Static Site Generator.
+# Usage: python esta.py build [-c CONFIG_FILE]
 
 import argparse
 import json
@@ -79,7 +79,9 @@ def rel(target, page_path):
 # --------------------------------------------------------------------------
 # Config
 # --------------------------------------------------------------------------
-def load_config():
+def load_config(config_file=None):
+    config_file = config_file or CONFIG_FILE
+    config_name = os.path.basename(config_file)
     parser = ConfigParser(
         allow_no_value=True,
         delimiters=("=",),
@@ -88,23 +90,32 @@ def load_config():
     )
     parser.optionxform = str  # keep file names case-sensitive
     try:
-        parser.read_string(read_file(CONFIG_FILE))
+        parser.read_string(read_file(config_file))
     except ConfigError as e:
-        raise EstaError(f"Invalid config.ini: {e}")
+        raise EstaError(f"Invalid {config_name}: {e}")
 
     config = {}
+
+    # [General] base_url (optional): a single trailing '/' is discarded
+    base_url = ""
+    if parser.has_option("General", "base_url"):
+        base_url = (parser.get("General", "base_url") or "").strip()
+        if base_url.endswith("/"):
+            base_url = base_url[:-1]
+    config["base_url"] = base_url
+
     for section in ("lang", "css", "js"):
         if not parser.has_section(section):
-            raise EstaError(f"config.ini is missing the [{section}] section.")
+            raise EstaError(f"{config_name} is missing the [{section}] section.")
         config[section] = list(parser.options(section))
     if not config["lang"]:
-        raise EstaError("config.ini: the [lang] section is empty.")
+        raise EstaError(f"{config_name}: the [lang] section is empty.")
     
     config["paths"] = {}
     for key in ("source", "css", "js", "lang", "templates", 
                 "pages", "assets", "build"):
         if not parser.has_option("paths", key):
-            raise EstaError(f"config.ini: [paths] section is missing '{key}'.")
+            raise EstaError(f"{config_name}: [paths] section is missing '{key}'.")
         # Make paths absolute relative to ROOT
         path_value = parser.get("paths", key)
         config["paths"][key] = os.path.join(ROOT, path_value)
@@ -211,6 +222,10 @@ TEMPLATE_RE = re.compile(
 ATTR_RE = re.compile(r'([\w:-]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\')')
 T_RE = re.compile(r"\{\{\s*t:\s*([\"'])(.+?)\1\s*\}\}")
 ASSET_RE = re.compile(r"\{\{\s*asset:\s*([\"'])(.+?)\1\s*\}\}")
+PAGE_RE = re.compile(
+    r"\{\{\s*page:\s*([\"'])(.+?)\1"
+    r"(?:\s*,?\s*lang:\s*([\"'])(.+?)\3)?\s*\}\}"
+)
 CSS_TAG_RE = re.compile(r"<esta-css\s*/?>(?:\s*</esta-css>)?", re.I)
 JS_TAG_RE = re.compile(r"<esta-js\s*/?>(?:\s*</esta-js>)?", re.I)
 
@@ -253,7 +268,8 @@ def lookup(data, key):
     return node
 
 
-def render_page(src, out, lang, data, templates, css_file, js_file, asset_map):
+def render_page(src, out, lang, data, templates, css_file, js_file, asset_map,
+                base_url="", languages=()):
     label = os.path.relpath(src, ROOT)
     page = read_file(src)
 
@@ -284,6 +300,23 @@ def render_page(src, out, lang, data, templates, css_file, js_file, asset_map):
         return rel(os.path.join(BUILD, "assets", built), out)
 
     page = ASSET_RE.sub(asset, page)
+
+    def page_link(match):
+        url = match.group(2).strip().lstrip("/")
+        target_lang = match.group(4).strip() if match.group(4) else lang
+        if languages and target_lang not in languages:
+            warn(f"{label}: language '{target_lang}' in '{match.group(0)}' "
+                 f"is not listed in the config.")
+        # Check the page exists (ignoring any #fragment or ?query)
+        path_part = re.split(r"[?#]", url, maxsplit=1)[0]
+        key = posixpath.normpath(path_part) if path_part else "."
+        candidate = os.path.join(PAGES_DIR, *key.split("/"))
+        if not (os.path.isfile(candidate)
+                or os.path.isfile(os.path.join(candidate, "index.html"))):
+            warn(f"{label}: linked page '{url}' not found in pages/.")
+        return f"{base_url}/{target_lang}/{url}"
+
+    page = PAGE_RE.sub(page_link, page)
 
     for problem in check_html(page):
         warn(f"{label} ({lang}): {problem}")
@@ -408,10 +441,11 @@ def sync_assets():
     return mapping
 
 
-def build():
+def build(config_file=None):
     global SOURCE, CSS_DIR, JS_DIR, LANG_DIR, TEMPLATES_DIR, PAGES_DIR, ASSETS_DIR, BUILD
 
-    config = load_config()
+    config = load_config(config_file)
+    base_url = config["base_url"]
 
     # Set global paths from config
     SOURCE = config["paths"]["source"]
@@ -453,7 +487,8 @@ def build():
                 src = os.path.join(dirpath, filename)
                 out = os.path.join(BUILD, lang, os.path.relpath(src, PAGES_DIR))
                 try:
-                    render_page(src, out, lang, data, templates, css_file, js_file, asset_map)
+                    render_page(src, out, lang, data, templates, css_file, js_file,
+                                asset_map, base_url, config["lang"])
                 except EstaError as e:
                     errors.append(str(e))
                     print(f"  error: {e}", file=sys.stderr)
@@ -475,12 +510,18 @@ def build():
 def main():
     parser = argparse.ArgumentParser(description="ESTA - static site generator")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build", help="build the site into the 'build' directory")
+    build_parser = sub.add_parser(
+        "build", help="build the site into the 'build' directory"
+    )
+    build_parser.add_argument(
+        "-c", "--config", metavar="PATH", default=None,
+        help="path to the config file (default: config.ini next to esta.py)",
+    )
     args = parser.parse_args()
 
     try:
         if args.command == "build":
-            build()
+            build(args.config)
     except EstaError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
