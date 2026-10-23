@@ -7,9 +7,9 @@ Esta is a simple Python script with the bare minimum needed to develop and deplo
 
 Esta is minimal by design: lightweight, performant, and easy to setup (zero dependencies besides Python itself).
 
-Esta's use case is developing simple websites that don't rely too much on server-side code and/or aren't updated too frequently: personal websites, portfolios, and small businesses. As a rule of thumb, if your server-side code is limited to a simple contact form, and you don't need to upload a blog post every day, then Esta is for you.
+Esta's use case is developing simple websites that have minimal server-side work and aren't updated too frequently: your average personal website, portfolio, or small business page. As a rule of thumb, if your server-side code is limited to a simple contact form, and you don't need to upload a blog post every other day, then Esta is for you.
 
-Esta is ideal for Github Pages and similar services. I created it for my personal website, https://zokaru.github.io/.
+Esta is built for for Github Pages and similar services. I created it for my personal website, https://zokaru.github.io/.
 
 ### Features
 
@@ -39,9 +39,41 @@ The following is an extensive guide of all concepts, features and tools included
 
 The 'source' directory you defined in the config file represents the root directory of your website.
 
-You must include a index.html page
+This directory must include an index.html page, which should have a language selector and/or a redirect. The following is a very barebones example of index.html with both of these features:
 
+```html
+<!doctype html>
 
+<html lang="{{ lang }}">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>My Website</title>
+    </head>
+    <body>
+        <p>Choose a language:</p>
+        <ul>
+            <li><a href="/en/index.html">English</a></li>
+            <li><a href="/es/index.html">Español</a></li>
+        </ul>
+
+        <script>
+            const supported = {{ langs }};
+            const defaultLanguage = "{{ lang }}";
+
+            const preferred = navigator.languages
+                .map(tag => tag.toLowerCase().split("-")[0])
+                .find(lang => supported.includes(lang));
+
+            const language = preferred || defaultLanguage;
+            if (window.location.protocol !== "file:") window.location.replace(`/${language}/index.html`);
+            else window.location.replace(`./${language}/index.html`);
+        </script>
+    </body>
+</html>
+```
+
+Note: The {{ lang }} and {{ langs }} tags are documented in the 'Translations' section below.
 
 Your sitemap, .htaccess, and robots.txt files should also be located here. All files in the root 'source' directory will be copied as-is to the root directory of your build (folders are ignored).
 
@@ -101,14 +133,14 @@ You can also pass values to a template by using attributes. For example, let's s
 
 ```html
 <div class="heading {{ theme }}">
-    <h1>{{ t: '{{ text }}' }}</h1>
+    <h1>{{ text }}</h1>
 </div>
 ```
 
 We can reference 'theme' and 'text' when we instance the template like this:
 
 ```html
-<esta-template template="heading" theme="dark" text="contact.title"></esta-template>
+<esta-template template="heading" theme="dark" text="{{ t: 'contact.title' }}"></esta-template>
 ```
 
 And the final result will be:
@@ -145,13 +177,32 @@ Example:
 
 Note: Translations are extremely barebores at the moment, with no support for plural forms, variations by context, or nesting. If you need advanced localisation features, it is recommended to use an external library or framework like [i18next](https://www.i18next.com/).
 
+#### Get the current language
+
+Use `{{ lang }}` in order to get the language the page is being built for, aka the "current" language.
+
+#### Get all languages
+
+Use `{{ langs }}` in order to get a JSON array containing all available languages as defined in the config file.
+
 ### Links
 
 Internal links to any HTML document in your website can be resolved automatically.
 
 Add links to internal pages using `{{ page: 'path' }}`, with `path` being the path to an HTML document in your 'pages' folder.
 
-For example, `<a href="{{ page: 'blog/christmas.html' }}"></a>` will resolve as `<a href="https://mywebsite.com/en/blog/christmas.html"></a>` (in this case, the visitor is accessing the website in English).
+For example:
+
+```html
+<a href="{{ page: 'blog/christmas.html' }}"></a>
+```
+
+Will resolve as:
+
+```html
+<a href="https://mywebsite.com/en/blog/christmas.html"></a>
+<!-- In this case, the visitor is accessing the website in English -->
+```
 
 Important: You must set a 'base_url' in your config file for this to work.
 

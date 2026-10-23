@@ -96,10 +96,10 @@ def load_config(config_file=None):
 
     config = {}
 
-    # [General] base_url (optional): a single trailing '/' is discarded
+    # [general] base_url (optional): a single trailing '/' is discarded
     base_url = ""
-    if parser.has_option("General", "base_url"):
-        base_url = (parser.get("General", "base_url") or "").strip()
+    if parser.has_option("general", "base_url"):
+        base_url = (parser.get("general", "base_url") or "").strip()
         if base_url.endswith("/"):
             base_url = base_url[:-1]
     config["base_url"] = base_url
@@ -216,43 +216,92 @@ def compile_bundle(names, src_dir, ext, out_path, js):
 # --------------------------------------------------------------------------
 # Page rendering
 # --------------------------------------------------------------------------
-TEMPLATE_RE = re.compile(
-    r"<esta-template\b([^>]*?)(?:/>|>\s*</esta-template\s*>)", re.I | re.S
+# Matches an opening/self-closing/closing <esta-template ...> tag. Quoted
+# attribute values may contain '>'. group(1) = "/" for closing tags,
+# group(2) = the raw attribute text (ends with "/" for self-closing tags).
+TEMPLATE_TAG_RE = re.compile(
+    r"<(/?)esta-template(?=[\s/>])((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>", re.I
 )
+CONTENT_RE = re.compile(r"<esta-content\s*/?>(?:\s*</esta-content\s*>)?", re.I)
+MAX_TEMPLATE_DEPTH = 10
 ATTR_RE = re.compile(r'([\w:-]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\')')
 T_RE = re.compile(r"\{\{\s*t:\s*([\"'])(.+?)\1\s*\}\}")
 ASSET_RE = re.compile(r"\{\{\s*asset:\s*([\"'])(.+?)\1\s*\}\}")
+LANG_RE = re.compile(r"\{\{\s*lang\s*\}\}")
+LANGS_RE = re.compile(r"\{\{\s*langs\s*\}\}")
 PAGE_RE = re.compile(
-    r"\{\{\s*page:\s*([\"'])(.+?)\1"
+    r"\{\{\s*page:\s*([\"'])(.*?)\1"
     r"(?:\s*,?\s*lang:\s*([\"'])(.+?)\3)?\s*\}\}"
 )
 CSS_TAG_RE = re.compile(r"<esta-css\s*/?>(?:\s*</esta-css>)?", re.I)
 JS_TAG_RE = re.compile(r"<esta-js\s*/?>(?:\s*</esta-js>)?", re.I)
 
 
-def expand_templates(page, templates, label):
-    def replace(match):
-        attrs = {k: a or b for k, a, b in ATTR_RE.findall(match.group(1))}
+def expand_templates(page, templates, label, depth=0):
+    """
+    Expand <esta-template template="name" ...> tags.
+
+    - Attributes fill `{{ attr }}` placeholders inside the template.
+    - Anything between the opening and closing tag is projected into the
+      template wherever it contains <esta-content>.
+    - Templates may use other templates, and tags may be nested.
+    """
+    if depth > MAX_TEMPLATE_DEPTH:
+        warn(f"{label}: templates are nested too deeply (or recursive).")
+        return page
+
+    out = []
+    pos = 0
+    while True:
+        # Find the next opening tag (skip stray closing tags)
+        match = TEMPLATE_TAG_RE.search(page, pos)
+        while match and match.group(1):
+            match = TEMPLATE_TAG_RE.search(page, match.end())
+        if not match:
+            out.append(page[pos:])
+            break
+        out.append(page[pos:match.start()])
+
+        if match.group(2).rstrip().endswith("/"):  # <esta-template ... />
+            inner, end = "", match.end()
+        else:  # find the matching </esta-template>, counting nested ones
+            level, scan = 1, match.end()
+            while level:
+                tag = TEMPLATE_TAG_RE.search(page, scan)
+                if not tag:
+                    raise EstaError(f"{label}: <esta-template> is never closed.")
+                if tag.group(1):
+                    level -= 1
+                elif not tag.group(2).rstrip().endswith("/"):
+                    level += 1
+                scan = tag.end()
+            inner, end = page[match.end():tag.start()], tag.end()
+
+        attrs = {k: a or b for k, a, b in ATTR_RE.findall(match.group(2))}
         name = attrs.get("template")
         if not name:
             raise EstaError(f"{label}: <esta-template> without a 'template' attribute.")
         if name not in templates:
             raise EstaError(f"{label}: template '{name}' not found in source/templates.")
-        out = templates[name]
+        body = templates[name]
+
         # Attributes: {{ SAMPLE }} is replaced by the value of the `SAMPLE` attribute
         for attr, value in attrs.items():
             pattern = r"\{\{\s*" + re.escape(attr) + r"\s*\}\}"
-            out = re.sub(pattern, lambda _: value, out)
-        return out
+            body = re.sub(pattern, lambda _: value, body)
 
-    for _ in range(10): # nested templates
-        expanded = TEMPLATE_RE.sub(replace, page)
-        if expanded == page:
-            break
-        page = expanded
-    if TEMPLATE_RE.search(page):
-        warn(f"{label}: templates are nested too deeply (or recursive).")
-    return page
+        # Content projection: <esta-content> receives the tag's inner content
+        projected = expand_templates(inner, templates, label, depth)
+        if CONTENT_RE.search(body):
+            body = CONTENT_RE.sub(lambda _: projected, body)
+        elif projected.strip():
+            warn(f"{label}: template '{name}' has no <esta-content>; "
+                 f"the content inside the tag is ignored.")
+
+        # The template itself may use other templates
+        out.append(expand_templates(body, templates, label, depth + 1))
+        pos = end
+    return "".join(out)
 
 
 def lookup(data, key):
@@ -284,6 +333,9 @@ def render_page(src, out, lang, data, templates, css_file, js_file, asset_map,
 
     page = T_RE.sub(translate, page)
 
+    page = LANG_RE.sub(lambda _: lang, page)
+    page = LANGS_RE.sub(lambda _: json.dumps(list(languages)), page)
+
     page = CSS_TAG_RE.sub(
         lambda _: f'<link rel="stylesheet" href="{rel(css_file, out)}">', page
     )
@@ -307,6 +359,10 @@ def render_page(src, out, lang, data, templates, css_file, js_file, asset_map,
         if languages and target_lang not in languages:
             warn(f"{label}: language '{target_lang}' in '{match.group(0)}' "
                  f"is not listed in the config.")
+        if not url:  # {{ page: '' }} -> the base url
+            if match.group(4):
+                return f"{base_url}/{target_lang}/"
+            return base_url
         # Check the page exists (ignoring any #fragment or ?query)
         path_part = re.split(r"[?#]", url, maxsplit=1)[0]
         key = posixpath.normpath(path_part) if path_part else "."
@@ -493,13 +549,19 @@ def build(config_file=None):
                     errors.append(str(e))
                     print(f"  error: {e}", file=sys.stderr)
 
-    # Root index.html (redirect to default language)
+    # Root index.html (redirect to default language). It is rendered like any
+    # other page, using the first language in the config as its language.
     index_src = os.path.join(SOURCE, "index.html")
     if os.path.isfile(index_src):
+        default_lang = config["lang"][0]
+        print("Building 'index.html' ...")
         try:
-            shutil.copy2(index_src, os.path.join(BUILD, "index.html"))
-        except OSError as e:
-            raise EstaError(f"Could not copy source/index.html: {e}")
+            render_page(index_src, os.path.join(BUILD, "index.html"),
+                        default_lang, load_language(default_lang), templates,
+                        css_file, js_file, asset_map, base_url, config["lang"])
+        except EstaError as e:
+            errors.append(str(e))
+            print(f"  error: {e}", file=sys.stderr)
 
     if errors:
         raise EstaError(f"Build finished with {len(errors)} error(s).")
