@@ -32,9 +32,9 @@ Assuming you have [Python](https://www.python.org/) and [PyPI](https://www.pytho
 
 ## Quick start
 
-1. Run `python esta.py new DIR`, with DIR being the location where you want to create your project (leave blank to install in your current directory).
+1. Run `esta new DIR`, with DIR being the location where you want to create your project (leave blank to install in your current directory).
 2. Edit the `base_url` in the generated config file (config.ini) according to your needs.
-3. Run `python esta.py build` to build your project.
+3. Run `esta build` to build your project.
 
 ## Usage
 
@@ -50,7 +50,7 @@ The configuration file (**config.ini** by default) contains all settings needed 
 - CSS: Specify all CSS files to include. The order in which you list the files is honoured when bundling.
 - JS: Same as CSS, but for JavaScript files.
 
-> Note: You can have multiple configuration files in a single project; just run `python esta.py build -c PATH_TO_CONFIG_FILE` to specify which file to use.
+> Note: You can have multiple configuration files in a single project; just run `esta build -c PATH_TO_CONFIG_FILE` to specify which file to use.
 
 ### Source
 
