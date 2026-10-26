@@ -1,6 +1,6 @@
 [project]
 name = "esta"
-version = "0.1.0"
+version = "0.1.1"
 description = "Minimal static site generator"
 keywords = ["static-site-generator", "html", "css-bundling", "js-bundling", "localisation", "html-templating"]
 readme = "README.md"
@@ -28,7 +28,7 @@ requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-esta = "esta:main"
+esta = "esta.esta:main"
 
 [project.urls]
 # Homepage = "https://github.com/Zokaru/Esta/"

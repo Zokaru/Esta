@@ -13,7 +13,7 @@ from configparser import ConfigParser, Error as ConfigError
 from datetime import datetime
 from html.parser import HTMLParser
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # --------------------------------------------------------------------------
 # Paths (relative to the directory containing esta.py)

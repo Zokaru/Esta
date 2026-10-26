@@ -6,7 +6,7 @@ long_description = (here / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="esta",
-    version="0.1.0",
+    version="0.1.1",
     description="Minimal static site generator",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -29,7 +29,7 @@ setup(
     python_requires=">=3.7, <4",
     entry_points={
         "console_scripts": [
-            "esta=esta:main",
+            "esta=esta.esta:main",
         ],
     },
 )
