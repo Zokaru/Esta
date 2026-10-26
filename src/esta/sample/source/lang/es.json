@@ -1,0 +1,9 @@
+{
+    "title": "Esta - Generador de Sitios Web Estáticos Minimalista",
+    "choose_language": "Elige tu idioma",
+    "home": {
+        "title": "¡Bienvenido a Esta!",
+        "intro": "Gracias por usar Esta, el Generador de Sitios Web Estáticos Minimalista. Empieza por leer el manual, que resume todas las funcionalidades y opciones disponibles:",
+        "docs_link": "Documentación (Github)"
+    }
+}

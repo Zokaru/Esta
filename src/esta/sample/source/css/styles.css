@@ -1,0 +1,24 @@
+/* css/styles.css                                                            */
+/* --------------                                                            */
+/* This is a sample CSS file. Add your CSS files to this directory.          */
+
+*, ::after, ::before {
+    box-sizing: border-box;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+body {    
+    background-color: #2B2B2B;
+}
+
+.home {
+    max-width: 30rem;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+    color: #D2D2D2;
+}
+
+.home .button {
+    color: #8FBBFF;
+}

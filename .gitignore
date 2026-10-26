@@ -1,9 +1,2 @@
-# Config
-config.ini
-
-# Testing directories
-source/
-build/
-
 # Mac DS Store
 .DS_Store
