@@ -1,0 +1,9 @@
+{
+    "title": "Esta - Minimal Static Site Generator",
+    "choose_language": "Choose your language",
+    "home": {
+        "title": "Welcome to Esta!",
+        "intro": "Thank you for using Esta, the Minimal Static Site Generator. Get started by reading the manual, which summarizes all available features and settings:",
+        "docs_link": "Documentation (Github)"
+    }
+}

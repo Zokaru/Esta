@@ -1,0 +1,20 @@
+<!-- templates/layout.html                                                  -->
+<!-- ---------------------                                                  -->
+<!-- This is a sample template. Use templates to create components or any   -->
+<!-- kind of reusable HTML.                                                 -->
+
+<!doctype html>
+
+<html lang="{{ lang }}">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" href="{{ asset: 'favicon/favicon.ico' }}" sizes="32x32">
+        <title>{{ t: 'title' }}</title>
+        <esta-css /> <!-- Link bundled CSS -->
+    </head>
+    <body>
+        <esta-content /> <!-- All inner HTML will be rendered here -->
+        <esta-js /> <!-- Link bundled JS -->
+    </body>
+</html>

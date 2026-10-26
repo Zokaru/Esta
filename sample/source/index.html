@@ -1,0 +1,27 @@
+<!-- index.html                                                             -->
+<!-- ----------                                                             -->
+<!-- This is intended to be your base URL. In this example, the suggestion  -->
+<!-- is to redirect users to their preferred language via javascript, and   -->
+<!-- to provide a language selector to users with no javascript.            -->
+
+<esta-template template="layout">
+    <h1>{{ t: 'home.title' }}</h1>
+    <p>{{ t: 'choose_language' }}</p>
+    <ul>
+        <li><a href="{{ page: 'index.html' lang: 'en' }}">English</a></li>
+        <li><a href="{{ page: 'index.html' lang: 'es' }}">Español</a></li>
+    </ul>
+
+    <script>
+        const supported = {{ langs }};
+        const defaultLanguage = "{{ lang }}";
+
+        const preferred = navigator.languages
+            .map(tag => tag.toLowerCase().split("-")[0])
+            .find(lang => supported.includes(lang));
+
+        const language = preferred || defaultLanguage;
+        if (window.location.protocol !== "file:") window.location.replace(`/${language}/index.html`);
+        else window.location.replace(`./${language}/index.html`);
+    </script>
+</esta-template>

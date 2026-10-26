@@ -1,0 +1,14 @@
+<!-- pages/index.html                                                       -->
+<!-- ----------------                                                       -->
+<!-- This is a sample page. The file/folder structure of your pages folder  -->
+<!-- will become the structure of your website. e.g. If you want a route    -->
+<!-- named example.com/LANG/about/me.html, just create pages/about/me.html. -->
+
+<esta-template template="layout"> <!-- See templates/layout.html -->
+    <main class="home">
+        <img src="{{ asset: 'img/esta_icon.svg' }}" alt="Esta">
+        <h1>{{ t: 'home.title' }}</h1>
+        <p>{{ t: 'home.intro' }}</p>
+        <a href="https://github.com/Zokaru/Esta" target="_blank" class="button">{{ t: 'home.docs_link' }}</a>
+    </main>
+</esta-template>

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 # Esta - Minimal Static Site Generator.
-# Usage: python esta.py build [-c CONFIG_FILE]
 
 import argparse
 import json
@@ -14,19 +13,22 @@ from configparser import ConfigParser, Error as ConfigError
 from datetime import datetime
 from html.parser import HTMLParser
 
+__version__ = "0.1"
+
 # --------------------------------------------------------------------------
 # Paths (relative to the directory containing esta.py)
 # --------------------------------------------------------------------------
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(ROOT, "config.ini")
-SOURCE = os.path.join(ROOT, "source")
+CONFIG_NAME = "config.ini"
+SOURCE = os.path.join(os.getcwd(), "source")
 CSS_DIR = os.path.join(SOURCE, "css")
 JS_DIR = os.path.join(SOURCE, "js")
 LANG_DIR = os.path.join(SOURCE, "lang")
 TEMPLATES_DIR = os.path.join(SOURCE, "templates")
 PAGES_DIR = os.path.join(SOURCE, "pages")
 ASSETS_DIR = os.path.join(SOURCE, "assets")
-BUILD = os.path.join(ROOT, "build")
+BUILD = os.path.join(os.getcwd(), "build")
+SAMPLE_DIR = os.path.join(ROOT, "sample")
 STAMP_FORMAT = "%Y%m%d%H%M%S"
 
 
@@ -45,18 +47,26 @@ def warn(message):
 # --------------------------------------------------------------------------
 # File helpers
 # --------------------------------------------------------------------------
+def display_path(path):
+    """Path as shown in messages: relative to the current directory."""
+    try:
+        return os.path.relpath(path)
+    except ValueError:  # e.g. a different drive on Windows
+        return path
+
+
 def read_file(path):
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        raise EstaError(f"File not found: {os.path.relpath(path, ROOT)}")
+        raise EstaError(f"File not found: {display_path(path)}")
     except PermissionError:
-        raise EstaError(f"No permission to read: {os.path.relpath(path, ROOT)}")
+        raise EstaError(f"No permission to read: {display_path(path)}")
     except UnicodeDecodeError:
-        raise EstaError(f"File is not valid UTF-8: {os.path.relpath(path, ROOT)}")
+        raise EstaError(f"File is not valid UTF-8: {display_path(path)}")
     except OSError as e:
-        raise EstaError(f"Could not read {os.path.relpath(path, ROOT)}: {e}")
+        raise EstaError(f"Could not read {display_path(path)}: {e}")
 
 
 def write_file(path, content):
@@ -65,9 +75,9 @@ def write_file(path, content):
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
     except PermissionError:
-        raise EstaError(f"No permission to write: {os.path.relpath(path, ROOT)}")
+        raise EstaError(f"No permission to write: {display_path(path)}")
     except OSError as e:
-        raise EstaError(f"Could not write {os.path.relpath(path, ROOT)}: {e}")
+        raise EstaError(f"Could not write {display_path(path)}: {e}")
 
 
 def rel(target, page_path):
@@ -80,7 +90,8 @@ def rel(target, page_path):
 # Config
 # --------------------------------------------------------------------------
 def load_config(config_file=None):
-    config_file = config_file or CONFIG_FILE
+    config_file = os.path.abspath(config_file or CONFIG_NAME)
+    config_dir = os.path.dirname(config_file)
     config_name = os.path.basename(config_file)
     parser = ConfigParser(
         allow_no_value=True,
@@ -116,9 +127,9 @@ def load_config(config_file=None):
                 "pages", "assets", "build"):
         if not parser.has_option("paths", key):
             raise EstaError(f"{config_name}: [paths] section is missing '{key}'.")
-        # Make paths absolute relative to ROOT
+        # Paths are relative to the directory containing the config file
         path_value = parser.get("paths", key)
-        config["paths"][key] = os.path.join(ROOT, path_value)
+        config["paths"][key] = os.path.normpath(os.path.join(config_dir, path_value))
     
     return config
 
@@ -507,7 +518,7 @@ def expand_templates(page, templates, label, depth=0):
         if not name:
             raise EstaError(f"{label}: <esta-template> without a 'template' attribute.")
         if name not in templates:
-            raise EstaError(f"{label}: template '{name}' not found in source/templates.")
+            raise EstaError(f"{label}: template '{name}' not found in {display_path(TEMPLATES_DIR)}.")
         body = templates[name]
 
         # Attributes: {{ SAMPLE }} is replaced by the value of the `SAMPLE` attribute
@@ -544,7 +555,7 @@ def lookup(data, key):
 
 def render_page(src, out, lang, data, templates, css_file, js_file, asset_map,
                 base_url="", languages=()):
-    label = os.path.relpath(src, ROOT)
+    label = display_path(src)
     page = read_file(src)
 
     page = expand_templates(page, templates, label)
@@ -630,9 +641,9 @@ def load_language(lang):
     try:
         data = json.loads(read_file(path))
     except json.JSONDecodeError as e:
-        raise EstaError(f"Invalid JSON in source/lang/{lang}.json: {e}")
+        raise EstaError(f"Invalid JSON in {display_path(path)}: {e}")
     if not isinstance(data, dict):
-        raise EstaError(f"source/lang/{lang}.json must contain a JSON object.")
+        raise EstaError(f"{display_path(path)} must contain a JSON object.")
     return data
 
 
@@ -741,7 +752,7 @@ def build(config_file=None):
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     if not os.path.isdir(PAGES_DIR):
-        raise EstaError("Directory not found: source/pages")
+        raise EstaError(f"Directory not found: {display_path(PAGES_DIR)}")
 
     print("Clearing build/ ...")
     clear_build()
@@ -774,8 +785,7 @@ def build(config_file=None):
                     errors.append(str(e))
                     print(f"  error: {e}", file=sys.stderr)
 
-    # Root index.html (redirect to default language). It is rendered like any
-    # other page, using the first language in the config as its language.
+    # Source index.html with the first lang from config
     index_src = os.path.join(SOURCE, "index.html")
     if os.path.isfile(index_src):
         default_lang = config["lang"][0]
@@ -794,21 +804,106 @@ def build(config_file=None):
     print(f"Done{suffix}.")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="ESTA - static site generator")
-    sub = parser.add_subparsers(dest="command", required=True)
+def new_project(directory=None):
+    target = os.path.abspath(directory or os.getcwd())
+
+    if not os.path.isdir(SAMPLE_DIR):
+        raise EstaError(f"Sample folder not found: {SAMPLE_DIR}")
+    if os.path.exists(target) and not os.path.isdir(target):
+        raise EstaError(f"Not a directory: {target}")
+
+    # List everything to copy
+    dirs, files = [], []
+    for dirpath, dirnames, filenames in os.walk(SAMPLE_DIR):
+        rel_dir = os.path.relpath(dirpath, SAMPLE_DIR)
+        for name in dirnames:
+            dirs.append(os.path.normpath(os.path.join(rel_dir, name)))
+        for name in filenames:
+            files.append(os.path.normpath(os.path.join(rel_dir, name)))
+
+    # Detect conflicts
+    conflicts = [f for f in files if os.path.exists(os.path.join(target, f))]
+    if conflicts:
+        shown = ", ".join(conflicts[:5]) + (", ..." if len(conflicts) > 5 else "")
+        raise EstaError(
+            f"Could not create the project: {len(conflicts)} file(s) already exist in "
+            f"{target} ({shown})."
+        )
+
+    try:
+        os.makedirs(target, exist_ok=True)
+        for d in dirs:
+            os.makedirs(os.path.join(target, d), exist_ok=True)
+        for f in files:
+            shutil.copy2(os.path.join(SAMPLE_DIR, f), os.path.join(target, f))
+    except PermissionError:
+        raise EstaError(f"No permission to write in: {target}")
+    except OSError as e:
+        raise EstaError(f"Could not create the project in {target}: {e}")
+
+    print(f"New project created in {target}")
+
+
+def build_arg_parser():
+    parser = argparse.ArgumentParser(
+        prog="esta.py",
+        description="Esta - Minimal Static Site Generator",
+        add_help=False,
+    )
+    parser.add_argument(
+        "-v", "--version", action="version", version=f"esta {__version__}",
+        help="Show the installed version and exit.",
+    )
+    parser.add_argument(
+        "-h", "--help", action="help", help="Show this help message and exit."
+    )
+    sub = parser.add_subparsers(dest="command", metavar="command", required=True)
+
+    new_parser = sub.add_parser(
+        "new", help="Create a new project."
+    )
+    new_parser.add_argument(
+        "directory", nargs="?", default=None, metavar="DIR",
+        help="Directory for the new project; created if missing "
+             "(default: current directory).",
+    )
+
     build_parser = sub.add_parser(
-        "build", help="build the site into the 'build' directory"
+        "build", help="Build the site into the 'build' directory."
     )
     build_parser.add_argument(
         "-c", "--config", metavar="PATH", default=None,
-        help="path to the config file (default: config.ini next to esta.py)",
+        help="Path to the config file, relative to the current directory "
+             "(default: config.ini in the current directory).",
     )
+
+    help_parser = sub.add_parser(
+        "help", help="Show help about the program or about a command."
+    )
+    help_parser.add_argument(
+        "topic", nargs="?", default=None, metavar="command",
+        help="Command to show help for.",
+    )
+    return parser, sub.choices
+
+
+def main():
+    parser, commands = build_arg_parser()
     args = parser.parse_args()
 
     try:
-        if args.command == "build":
-            build(args.config)
+        if args.command == "new":
+            new_project(args.directory)
+        elif args.command == "build":
+            config_file = os.path.abspath(args.config) if args.config else None
+            build(config_file)
+        elif args.command == "help":
+            if args.topic is None:
+                parser.print_help()
+            elif args.topic in commands:
+                commands[args.topic].print_help()
+            else:
+                raise EstaError(f"Unknown command: {args.topic}")
     except EstaError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
