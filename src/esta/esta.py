@@ -469,6 +469,7 @@ PAGE_RE = re.compile(
     r"\{\{\s*page:\s*([\"'])(.*?)\1"
     r"(?:\s*,?\s*lang:\s*([\"'])(.+?)\3)?\s*\}\}"
 )
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 CSS_TAG_RE = re.compile(r"<esta-css\s*/?>(?:\s*</esta-css>)?", re.I)
 JS_TAG_RE = re.compile(r"<esta-js\s*/?>(?:\s*</esta-js>)?", re.I)
 
@@ -558,7 +559,13 @@ def render_page(src, out, lang, data, templates, css_file, js_file, asset_map,
     label = display_path(src)
     page = read_file(src)
 
+    # Remove HTML comments (before expanding templates, so a commented-out
+    # <esta-template> is not expanded; and again afterwards, to remove the
+    # comments that came from the templates themselves). Both happen before
+    # translation, so commented-out {{ t: '...' }} never produces warnings.
+    page = HTML_COMMENT_RE.sub("", page)
     page = expand_templates(page, templates, label)
+    page = HTML_COMMENT_RE.sub("", page)
 
     def translate(match):
         value = lookup(data, match.group(2))
@@ -648,15 +655,26 @@ def load_language(lang):
 
 
 def load_templates():
+    """
+    Load every file under templates/ (subdirectories included).
+
+    A template is addressed by its path relative to templates/, using '/'
+    as separator, with or without extension: "layout/blog.html" or
+    "layout/blog".
+    """
     templates = {}
     if not os.path.isdir(TEMPLATES_DIR):
         return templates
-    for filename in sorted(os.listdir(TEMPLATES_DIR)):
-        path = os.path.join(TEMPLATES_DIR, filename)
-        if os.path.isfile(path):
+    for dirpath, dirnames, files in os.walk(TEMPLATES_DIR):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for filename in sorted(files):
+            if filename.startswith("."):
+                continue  # skip hidden files such as .DS_Store
+            path = os.path.join(dirpath, filename)
+            key = os.path.relpath(path, TEMPLATES_DIR).replace(os.sep, "/")
             content = read_file(path)
-            templates[filename] = content # "SAMPLE.html"
-            templates.setdefault(os.path.splitext(filename)[0], content) # "SAMPLE"
+            templates[key] = content  # "layout/blog.html"
+            templates.setdefault(posixpath.splitext(key)[0], content)  # "layout/blog"
     return templates
 
 
