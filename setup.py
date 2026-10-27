@@ -6,7 +6,7 @@ long_description = (here / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="esta",
-    version="0.1.1",
+    version="0.1.2",
     description="Minimal static site generator",
     long_description=long_description,
     long_description_content_type="text/markdown",

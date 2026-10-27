@@ -1,6 +1,6 @@
 [project]
 name = "esta"
-version = "0.1.1"
+version = "0.1.2"
 description = "Minimal static site generator"
 keywords = ["static-site-generator", "html", "css-bundling", "js-bundling", "localisation", "html-templating"]
 readme = "README.md"
